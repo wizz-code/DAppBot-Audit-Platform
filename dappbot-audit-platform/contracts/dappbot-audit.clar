@@ -131,3 +131,119 @@
     verified: (is-auditor-verified auditor)
   })
 )
+
+;; Public functions
+;; #[allow(unchecked_data)]
+(define-public (create-bounty (dapp-name (string-ascii 50)) (reward-amount uint) (code-hash (buff 32)))
+  (let
+    (
+      (bounty-id (var-get bounty-count))
+    )
+    (asserts! (> reward-amount u0) err-invalid-amount)
+    (map-set bounties bounty-id
+      {
+        developer: tx-sender,
+        dapp-name: dapp-name,
+        reward-amount: reward-amount,
+        code-hash: code-hash,
+        resolved: false,
+        created-at: stacks-block-height
+      }
+    )
+    (var-set bounty-count (+ bounty-id u1))
+    (ok bounty-id)
+  )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (submit-audit (bounty-id uint) (findings-hash (buff 32)) (severity (string-ascii 20)))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+      (audit-id (var-get audit-count))
+    )
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-set audits audit-id
+      {
+        bounty-id: bounty-id,
+        auditor: tx-sender,
+        findings-hash: findings-hash,
+        severity: severity,
+        rewarded: false,
+        submitted-at: stacks-block-height
+      }
+    )
+    (var-set audit-count (+ audit-id u1))
+    (ok audit-id)
+  )
+)
+
+(define-public (reward-auditor (audit-id uint))
+  (let
+    (
+      (audit-data (unwrap! (map-get? audits audit-id) err-not-found))
+      (bounty-data (unwrap! (map-get? bounties (get bounty-id audit-data)) err-not-found))
+      (auditor (get auditor audit-data))
+      (current-rep (get-auditor-reputation auditor))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (not (get rewarded audit-data)) err-already-claimed)
+    (map-set audits audit-id
+      (merge audit-data { rewarded: true })
+    )
+    (map-set auditor-reputation auditor (+ current-rep u1))
+    (ok true)
+  )
+)
+
+(define-public (resolve-bounty (bounty-id uint))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-set bounties bounty-id
+      (merge bounty-data { resolved: true })
+    )
+    (ok true)
+  )
+)
+
+;; Batch reward auditors
+(define-public (batch-reward-auditors (audit-ids (list 10 uint)))
+  (begin
+    (asserts! (> (len audit-ids) u0) err-invalid-amount)
+    (ok (map reward-single-auditor audit-ids))
+  )
+)
+
+;; Helper for batch reward
+(define-private (reward-single-auditor (audit-id uint))
+  (match (map-get? audits audit-id)
+    audit-data
+      (match (map-get? bounties (get bounty-id audit-data))
+        bounty-data
+          (let
+            (
+              (auditor (get auditor audit-data))
+              (current-rep (get-auditor-reputation auditor))
+            )
+            (if (and 
+                  (is-eq tx-sender (get developer bounty-data))
+                  (not (get rewarded audit-data)))
+              (begin
+                (map-set audits audit-id
+                  (merge audit-data { rewarded: true })
+                )
+                (map-set auditor-reputation auditor (+ current-rep u1))
+                true
+              )
+              false
+            )
+          )
+        false
+      )
+    false
+  )
+)

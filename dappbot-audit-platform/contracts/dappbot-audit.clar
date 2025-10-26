@@ -247,3 +247,56 @@
     false
   )
 )
+
+;; #[allow(unchecked_data)]
+(define-public (create-dispute (audit-id uint) (reason (string-ascii 200)))
+  (let
+    (
+      (audit-data (unwrap! (map-get? audits audit-id) err-not-found))
+      (dispute-id (var-get dispute-count))
+    )
+    (map-set disputes dispute-id
+      {
+        audit-id: audit-id,
+        initiator: tx-sender,
+        reason: reason,
+        resolved: false,
+        resolution: "",
+        created-at: stacks-block-height
+      }
+    )
+    (var-set dispute-count (+ dispute-id u1))
+    (ok dispute-id)
+  )
+)
+
+(define-public (resolve-dispute (dispute-id uint) (resolution (string-ascii 20)))
+  (let
+    (
+      (dispute-data (unwrap! (map-get? disputes dispute-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (not (get resolved dispute-data)) err-already-resolved)
+    (map-set disputes dispute-id
+      (merge dispute-data { resolved: true, resolution: resolution })
+    )
+    (ok true)
+  )
+)
+
+;; Submit audit review
+;; #[allow(unchecked_data)]
+(define-public (submit-audit-review (audit-id uint) (rating uint) (comment-hash (buff 32)))
+  (let
+    (
+      (audit-data (unwrap! (map-get? audits audit-id) err-not-found))
+      (bounty-data (unwrap! (map-get? bounties (get bounty-id audit-data)) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (<= rating u5) err-invalid-amount)
+    (map-set audit-reviews { audit-id: audit-id, reviewer: tx-sender }
+      { rating: rating, comment-hash: comment-hash }
+    )
+    (ok true)
+  )
+)

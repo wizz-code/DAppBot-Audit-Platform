@@ -300,3 +300,127 @@
     (ok true)
   )
 )
+
+;; Verify auditor
+;; #[allow(unchecked_data)]
+(define-public (verify-auditor (auditor principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set auditor-verified auditor true)
+    (ok true)
+  )
+)
+
+;; Unverify auditor
+;; #[allow(unchecked_data)]
+(define-public (unverify-auditor (auditor principal))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set auditor-verified auditor false)
+    (ok true)
+  )
+)
+
+;; Increase auditor reputation manually
+;; #[allow(unchecked_data)]
+(define-public (adjust-auditor-reputation (auditor principal) (amount uint))
+  (let
+    (
+      (current-rep (get-auditor-reputation auditor))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (map-set auditor-reputation auditor (+ current-rep amount))
+    (ok true)
+  )
+)
+
+;; Decrease auditor reputation
+(define-public (decrease-auditor-reputation (auditor principal) (amount uint))
+  (let
+    (
+      (current-rep (get-auditor-reputation auditor))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (>= current-rep amount) err-invalid-amount)
+    (map-set auditor-reputation auditor (- current-rep amount))
+    (ok true)
+  )
+)
+
+;; Update bounty reward
+(define-public (update-bounty-reward (bounty-id uint) (new-reward uint))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (asserts! (> new-reward u0) err-invalid-amount)
+    (map-set bounties bounty-id
+      (merge bounty-data { reward-amount: new-reward })
+    )
+    (ok true)
+  )
+)
+
+;; Cancel bounty
+(define-public (cancel-bounty (bounty-id uint))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-set bounties bounty-id
+      (merge bounty-data { resolved: true })
+    )
+    (ok true)
+  )
+)
+
+;; Withdraw audit (by auditor)
+(define-public (withdraw-audit (audit-id uint))
+  (let
+    (
+      (audit-data (unwrap! (map-get? audits audit-id) err-not-found))
+      (bounty-data (unwrap! (map-get? bounties (get bounty-id audit-data)) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get auditor audit-data)) err-unauthorized)
+    (asserts! (not (get rewarded audit-data)) err-already-claimed)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-delete audits audit-id)
+    (ok true)
+  )
+)
+
+;; Update audit severity
+(define-public (update-audit-severity (audit-id uint) (new-severity (string-ascii 20)))
+  (let
+    (
+      (audit-data (unwrap! (map-get? audits audit-id) err-not-found))
+      (bounty-data (unwrap! (map-get? bounties (get bounty-id audit-data)) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get auditor audit-data)) err-unauthorized)
+    (asserts! (not (get rewarded audit-data)) err-already-claimed)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-set audits audit-id
+      (merge audit-data { severity: new-severity })
+    )
+    (ok true)
+  )
+)
+
+;; Transfer bounty ownership
+(define-public (transfer-bounty (bounty-id uint) (new-developer principal))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get developer bounty-data)) err-unauthorized)
+    (asserts! (not (get resolved bounty-data)) err-already-resolved)
+    (map-set bounties bounty-id
+      (merge bounty-data { developer: new-developer })
+    )
+    (ok true)
+  )
+)

@@ -54,3 +54,80 @@
 (define-map bounty-auditor-count uint uint)
 (define-map auditor-bounty-submissions { auditor: principal, bounty-id: uint } bool)
 (define-map audit-reviews { audit-id: uint, reviewer: principal } { rating: uint, comment-hash: (buff 32) })
+
+;; Read-only functions
+(define-read-only (get-bounty (bounty-id uint))
+  (map-get? bounties bounty-id)
+)
+
+(define-read-only (get-audit (audit-id uint))
+  (map-get? audits audit-id)
+)
+
+(define-read-only (get-dispute (dispute-id uint))
+  (map-get? disputes dispute-id)
+)
+
+(define-read-only (get-auditor-reputation (auditor principal))
+  (default-to u0 (map-get? auditor-reputation auditor))
+)
+
+(define-read-only (get-bounty-count)
+  (ok (var-get bounty-count))
+)
+
+(define-read-only (get-audit-count)
+  (ok (var-get audit-count))
+)
+
+(define-read-only (get-dispute-count)
+  (ok (var-get dispute-count))
+)
+
+(define-read-only (is-auditor-verified (auditor principal))
+  (default-to false (map-get? auditor-verified auditor))
+)
+
+(define-read-only (get-bounty-audit-count (bounty-id uint))
+  (default-to u0 (map-get? bounty-auditor-count bounty-id))
+)
+
+(define-read-only (has-submitted-audit (auditor principal) (bounty-id uint))
+  (default-to false (map-get? auditor-bounty-submissions { auditor: auditor, bounty-id: bounty-id }))
+)
+
+(define-read-only (get-audit-review (audit-id uint) (reviewer principal))
+  (map-get? audit-reviews { audit-id: audit-id, reviewer: reviewer })
+)
+
+;; Get bounty statistics
+(define-read-only (get-bounty-stats (bounty-id uint))
+  (let
+    (
+      (bounty-data (unwrap! (map-get? bounties bounty-id) err-not-found))
+      (total-audits (get-bounty-audit-count bounty-id))
+    )
+    (ok {
+      developer: (get developer bounty-data),
+      reward-amount: (get reward-amount bounty-data),
+      resolved: (get resolved bounty-data),
+      total-audits: total-audits
+    })
+  )
+)
+
+;; Check if bounty is active
+(define-read-only (is-bounty-active (bounty-id uint))
+  (match (map-get? bounties bounty-id)
+    bounty-data (ok (not (get resolved bounty-data)))
+    err-not-found
+  )
+)
+
+;; Get auditor stats
+(define-read-only (get-auditor-stats (auditor principal))
+  (ok {
+    reputation: (get-auditor-reputation auditor),
+    verified: (is-auditor-verified auditor)
+  })
+)
